@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="am"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#2b0a3e">
+<link rel="apple-touch-icon" href="/love_icon_192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>ፍቅር 💕</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;background:#1a0b2e;font-family:sans-serif;touch-action:none}
+canvas{position:fixed;inset:0;width:100%;height:100%}
+#bar{position:fixed;left:0;right:0;bottom:0;padding:6px;background:rgba(20,5,30,.55);backdrop-filter:blur(8px);display:flex;flex-direction:column;gap:5px}
+.row{display:flex;gap:6px;overflow-x:auto;align-items:center;scrollbar-width:none}
+.row::-webkit-scrollbar{display:none}
+button{flex:0 0 auto;border:0;border-radius:14px;padding:7px 11px;font-size:20px;background:rgba(255,255,255,.15);color:#fff}
+button.on{background:#ff4d88;box-shadow:0 0 10px #ff4d88}
+.c{width:30px;height:30px;border-radius:50%;padding:0;border:2px solid #fff6}
+.c.on{border-color:#fff;box-shadow:0 0 10px #fff}
+#top{position:fixed;top:8px;left:0;right:0;text-align:center;color:#fff;font-size:15px;text-shadow:0 0 8px #000;pointer-events:none}
+#join{position:fixed;inset:0;background:linear-gradient(#2b0a3e,#7a1f4a);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;color:#fff;z-index:9}
+#join input{font-size:22px;padding:12px;border-radius:14px;border:0;text-align:center;width:70%}
+#join .go{background:#ff4d88;font-size:22px;padding:12px 30px}
+input[type=range]{flex:1;min-width:90px}
+</style></head><body>
+<canvas id="bg"></canvas><canvas id="ink"></canvas>
+<div id="top"></div>
+<div id="bar">
+ <div class="row" id="tools"></div>
+ <div class="row" id="stamps"></div>
+ <div class="row" id="colors"></div>
+</div>
+<div id="join">
+ <div style="font-size:60px">💌</div>
+ <div style="font-size:20px">የምስጢር ቃላችሁን ጻፉ (ሁለታችሁም አንድ አይነት)</div>
+ <input id="code" placeholder="ለምሳሌ: feven-bisri" autocomplete="off">
+ <button class="go" id="goBtn">ግባ 💕</button>
+</div>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+// ===== መሰረታዊ ዝግጅት =====
+const bg = document.getElementById('bg'), ink = document.getElementById('ink');
+const bx = bg.getContext('2d'), ix = ink.getContext('2d');
+let W, H, dpr = Math.min(devicePixelRatio || 1, 2);
+function resize() { W = innerWidth; H = innerHeight; [bg, ink].forEach(c => { c.width = W * dpr; c.height = H * dpr; }); bx.setTransform(dpr,0,0,dpr,0,0); ix.setTransform(dpr,0,0,dpr,0,0); }
+addEventListener('resize', resize); resize();
+
+const socket = io();
+let items = [], theme = 'night', fade = false;
+let tool = 'pen', stamp = '❤️', color = '#ff4d88', size = 6;
+const me = Math.random().toString(36).slice(2, 8);
+
+// ===== ጀርባዎች (themes) =====
+const THEMES = {
+  night: ['🌙 ሌሊት', '#1a0b2e', '#4a1d6e'],
+  rain: ['🌧️ ዝናብ', '#141a33', '#3b2a54'],
+  hearts: ['💗 ልቦች', '#ff8fb1', '#b3205f'],
+  petals: ['🌹 አበባ', '#2b0a1e', '#8a1f4f']
+};
+let parts = [];
+function initParts() {
+  parts = Array.from({ length: theme === 'rain' ? 140 : 45 }, () => ({ x: Math.random() * W, y: Math.random() * H, v: 1 + Math.random() * 2, s: 10 + Math.random() * 22, p: Math.random() * 6.28 }));
+}
+function drawBg(t) {
+  const th = THEMES[theme], g = bx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, th[1]); g.addColorStop(1, th[2]);
+  bx.fillStyle = g; bx.fillRect(0, 0, W, H);
+  bx.textAlign = 'center';
+  if (theme === 'night') {
+    bx.font = '60px serif'; bx.fillText('🌙', W * .8, 90);
+    parts.forEach(p => { bx.globalAlpha = .4 + .6 * Math.abs(Math.sin(t / 700 + p.p)); bx.fillStyle = '#fff'; bx.beginPath(); bx.arc(p.x, p.y * .8, p.s / 14, 0, 7); bx.fill(); });
+  } else if (theme === 'rain') {
+    bx.strokeStyle = 'rgba(190,210,255,.5)'; bx.lineWidth = 1.2;
+    parts.forEach(p => { p.y += p.v * 7; p.x -= 1.5; if (p.y > H) { p.y = -20; p.x = Math.random() * W + 40; } bx.beginPath(); bx.moveTo(p.x, p.y); bx.lineTo(p.x + 3, p.y + p.s); bx.stroke(); });
+  } else {
+    const em = theme === 'hearts' ? '💗' : '🌹';
+    parts.forEach(p => {
+      if (theme === 'hearts') { p.y -= p.v * .6; if (p.y < -30) p.y = H + 30; } else { p.y += p.v * .6; if (p.y > H + 30) p.y = -30; }
+      bx.globalAlpha = .75; bx.font = p.s + 'px serif'; bx.fillText(em, p.x + Math.sin(t / 900 + p.p) * 20, p.y);
+    });
+  }
+  bx.globalAlpha = 1;
+}
+
+// ===== ጽሁፍ/ስዕል መሳል =====
+function drawInk(now) {
+  ix.clearRect(0, 0, W, H); ix.lineCap = ix.lineJoin = 'round'; ix.textAlign = 'center'; ix.textBaseline = 'middle';
+  for (const it of items) {
+    let a = 1;
+    if (fade) a = Math.max(0, 1 - (now - it.t - 7000) / 3000); // ከ7 ሰከንድ በኋላ ይደበዝዛል
+    if (a <= 0) continue;
+    ix.globalAlpha = a;
+    if (it.k === 's') {
+      ix.strokeStyle = it.c; ix.lineWidth = it.w; ix.shadowColor = it.c; ix.shadowBlur = 12;
+      ix.beginPath(); it.p.forEach((q, i) => i ? ix.lineTo(q[0] * W, q[1] * W) : ix.moveTo(q[0] * W, q[1] * W));
+      if (it.p.length === 1) ix.lineTo(it.p[0][0] * W + .1, it.p[0][1] * W);
+      ix.stroke(); ix.shadowBlur = 0;
+    } else {
+      ix.font = it.w + 'px serif'; ix.fillText(it.ch, it.x * W, it.y * W);
+    }
+  }
+  ix.globalAlpha = 1;
+}
+function loop(t) { drawBg(t); drawInk(Date.now()); requestAnimationFrame(loop); }
+requestAnimationFrame(loop);
+
+// ===== የጣት ንክኪ =====
+let cur = null, buf = [], lastSend = 0, lastStamp = null;
+const pt = e => [e.clientX / W, e.clientY / W];
+function send(it) { socket.emit('item', it); }
+function flush() { if (cur && buf.length) { send({ id: cur.id, k: 's', c: cur.c, w: cur.w, p: buf, t: 0 }); buf = []; } }
+function doStamp(x, y, ch, w) { const it = { id: me + Date.now() + Math.random(), k: 'e', ch, x, y, w, t: Date.now() }; items.push(it); send(it); }
+ink.addEventListener('pointerdown', e => {
+  const q = pt(e);
+  if (tool === 'pen') { cur = { id: me + Date.now(), k: 's', c: color, w: size, p: [q], t: Date.now() }; items.push(cur); buf = [q]; }
+  else { lastStamp = q; doStamp(q[0], q[1], stamp, tool === 'brush' ? size * 4 + 14 : size * 6 + 30); }
+});
+ink.addEventListener('pointermove', e => {
+  const q = pt(e);
+  if (cur) { cur.p.push(q); buf.push(q); if (Date.now() - lastSend > 40) { flush(); lastSend = Date.now(); } }
+  else if (tool === 'brush' && lastStamp) { // የልብ ብሩሽ
+    if (Math.hypot(q[0] - lastStamp[0], q[1] - lastStamp[1]) * W > size * 3 + 22) { lastStamp = q; doStamp(q[0], q[1], stamp, size * 4 + 14); }
+  }
+});
+const up = () => { flush(); cur = null; lastStamp = null; };
+ink.addEventListener('pointerup', up); ink.addEventListener('pointercancel', up);
+
+// ===== ከሌላኛው የሚመጣ =====
+socket.on('init', r => { items = r.items.map(i => ({ ...i, t: Date.now() })); setTheme(r.bg, 1); fade = r.fade; renderTools(); });
+socket.on('item', it => {
+  if (it.k === 's') { const o = items.find(x => x.id === it.id); if (o) { o.p.push(...it.p); return; } }
+  items.push({ ...it, t: Date.now() });
+});
+socket.on('clear', () => items = []);
+socket.on('bg', b => setTheme(b, 1));
+socket.on('fade', f => { fade = f; renderTools(); });
+socket.on('count', n => document.getElementById('top').textContent = n > 1 ? 'ሁለታችሁም እዚህ ናችሁ 💕' : 'ብቻህን ነህ… እሷን ጠብቅ 🥺');
+
+// ===== መቆጣጠሪያ ቁልፎች =====
+function setTheme(b, remote) { theme = b; initParts(); if (!remote) socket.emit('bg', b); }
+function renderTools() {
+  const T = document.getElementById('tools'); T.innerHTML = '';
+  const add = (lbl, on, fn) => { const b = document.createElement('button'); b.textContent = lbl; if (on) b.className = 'on'; b.onclick = fn; T.appendChild(b); };
+  add('✏️', tool === 'pen', () => { tool = 'pen'; renderTools(); });
+  add('💗 ብሩሽ', tool === 'brush', () => { tool = 'brush'; renderTools(); });
+  add('👆 ቴምብር', tool === 'stamp', () => { tool = 'stamp'; renderTools(); });
+  Object.entries(THEMES).forEach(([k, v]) => add(v[0].split(' ')[0], theme === k, () => { setTheme(k); renderTools(); }));
+  add('✨ ይደበዝዝ', fade, () => { fade = !fade; socket.emit('fade', fade); renderTools(); });
+  add('🗑️', 0, () => { items = []; socket.emit('clear'); });
+  add('📷', 0, () => { // ስዕሉን ማስቀመጥ
+    const c = document.createElement('canvas'); c.width = ink.width; c.height = ink.height; const x = c.getContext('2d');
+    x.drawImage(bg, 0, 0); x.drawImage(ink, 0, 0); const a = document.createElement('a'); a.download = 'love.png'; a.href = c.toDataURL(); a.click();
+  });
+  const r = document.createElement('input'); r.type = 'range'; r.min = 3; r.max = 22; r.value = size; r.oninput = () => size = +r.value; T.appendChild(r);
+}
+const S = document.getElementById('stamps');
+['❤️','💖','💕','😘','🥰','😍','💋','🌹','✨','🦋','🔥','💍','🧸','🌙','⭐','😭'].forEach(e => { const b = document.createElement('button'); b.textContent = e; b.onclick = () => { stamp = e; if (tool === 'pen') tool = 'stamp'; renderTools(); }; S.appendChild(b); });
+const C = document.getElementById('colors');
+['#ff4d88','#ffffff','#ffd166','#ff3b3b','#b388ff','#4dd0ff','#7CFF9E','#ff9f43'].forEach(c => { const b = document.createElement('button'); b.className = 'c'; b.style.background = c; b.onclick = () => { color = c; tool = 'pen'; renderTools(); }; C.appendChild(b); });
+renderTools(); initParts();
+
+// ===== ክፍል መግባት =====
+document.getElementById('goBtn').onclick = () => {
+  const v = document.getElementById('code').value.trim(); if (!v) return;
+  localStorage.setItem('room', v); socket.emit('join', v); document.getElementById('join').style.display = 'none';
+};
+document.getElementById('code').value = localStorage.getItem('room') || '';
+// PWA: service worker ምዝገባ (localhost ወይም https ላይ ብቻ ይሰራል)
+if('serviceWorker' in navigator){try{navigator.serviceWorker.register('/sw.js')}catch(e){}}
+</script></body></html>
